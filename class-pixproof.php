@@ -13,6 +13,12 @@
  * @package   PixProof
  * @author    Pixelgrade <contact@pixelgrade.com>
  */
+
+
+
+// Include MPDF60
+include_once(plugin_dir_path( __FILE__ ).'mpdf60/mpdf.php');
+
 class PixProofPlugin {
 
 	/**
@@ -105,6 +111,7 @@ class PixProofPlugin {
 		add_action( 'wp_ajax_nopriv_pixproof_image_click', array( &$this, 'ajax_click_on_photo' ) );
 		add_action( 'wp_ajax_pixproof_zip_file_url', array( &$this, 'generate_photos_zip_file' ) );
 		add_action( 'wp_ajax_nopriv_pixproof_zip_file_url', array( &$this, 'generate_photos_zip_file' ) );
+        add_action( 'wp_ajax_pixproof_pdf_file_url', array( &$this, 'generate_photos_pdf_file' ) );
 	}
 
 	/**
@@ -408,12 +415,19 @@ class PixProofPlugin {
 				require ABSPATH . 'wp-admin/includes/class-pclzip.php';
 			}
 
-			// if the user wants a download link, now we qenerate it
+			// if the user wants a download link, now we qenerate it            
 			if ( ! isset( self::$plugin_settings[ 'zip_archive_generation' ] ) || self::$plugin_settings[ 'zip_archive_generation' ] == 'manual' ) {
 				$file = get_post_meta( get_the_ID(), '_pixproof_file', true );
 			} elseif ( class_exists( 'PclZip' ) ) {
-				$file = new PclZip( 'photos' );
-				$file = PixProofPlugin::get_zip_file_url( get_the_ID() );
+                
+                
+                if (self::$plugin_settings[ 'zip_archive_generation' ] == 'pdf') {
+                    $file = PixProofPlugin::get_pdf_file_url( get_the_ID() );
+                } else {
+                    $file = new PclZip( 'photos' );
+				    $file = PixProofPlugin::get_zip_file_url( get_the_ID() );
+                }
+				
 			}
 		}
 
@@ -648,6 +662,149 @@ class PixProofPlugin {
 	function prepare_the_gallery_name( $file_name_prefix, $post_slug, $unique, $extension ) {
 		return $file_name_prefix . $post_slug . '_' . $unique . $extension;
 	}
+    
+        /**
+         *  Creates an ajax call link for the PDF 
+         * @param  integer $post_id Post ID
+         * @return string 
+         */
+        static function get_pdf_file_url( $post_id ) {
+                return add_query_arg( array(
+                    'action'     => 'pixproof_pdf_file_url',
+                    'gallery_id' => $post_id,
+                ), admin_url( 'admin-ajax.php' ) );
+            }
+
+        /**
+         * Generate PDF file based on selection
+         * @return pdf|boolean Returns PDF or JSON ERROR
+         */
+        public function generate_photos_pdf_file() {
+
+        if ( ! isset ( $_REQUEST[ 'gallery_id' ] ) ) {
+            return 'no gallery';
+        }
+
+        global $post;
+        $gallery_id = $_REQUEST[ 'gallery_id' ];
+
+        $post = get_post( $gallery_id );
+
+        if ( post_password_required( $post ) ) {
+            wp_send_json_error( esc_html__('The gallery password is required', 'pixproof') );
+        }
+
+        // get this gallery's metadata
+        $gallery_data = get_post_meta( $gallery_id, '_pixproof_main_gallery', true );
+        // quit if there is no gallery data
+        if ( empty( $gallery_data ) || ! isset( $gallery_data[ 'gallery' ] ) ) {
+            wp_send_json_error( esc_html__('No gallery data', 'pixproof') );
+        }
+
+        $gallery_ids = explode( ',', $gallery_data[ 'gallery' ] );
+        if ( empty( $gallery_ids ) ) {
+            wp_send_json_error( esc_html__('Empty gallery', 'pixproof') );
+        }
+
+        // get attachments
+        $attachments = get_posts( array(
+            'post_status'    => 'any',
+            'post_type'      => 'attachment',
+            'post__in'       => $gallery_ids,
+            'orderby'        => 'post__in',
+            'posts_per_page' => '-1',
+            //			'meta_query'  => array( // this doesn't work :(
+            //				array(
+            //					'key'     => 'selected',
+            //					'value'   => 'true',
+            //					'compare' => '=',
+            //				)
+            //			)
+        ) );
+
+        if ( is_wp_error( $attachments ) || empty( $attachments ) ) {
+            return false;
+        }
+
+
+        /* PDF ADD */
+        // page orientation
+
+      // font size 
+      $dkpdf_font_size = '12' ;
+      $dkpdf_font_family = '';
+
+      // margins
+      $dkpdf_margin_left = '1' ;
+      $dkpdf_margin_right = '1' ;
+      $dkpdf_margin_top = '1' ;
+      $dkpdf_margin_bottom = '1' ;
+      $dkpdf_margin_header = '1' ;
+
+
+      // Add Logo to the first Page (leave blank to remove) - wp-conent/uploads/pixproof-pdf-logo.jpg
+      $pixproof_pdf_logo = wp_upload_dir(); 
+      $pixproof_pdf_logo = $pixproof_pdf_logo['basedir'].'/pixproof-pdf-logo.jpg';
+
+
+      // creating and setting the pdf (includes /)
+      $pixproof_pdf_path = plugin_dir_path( __FILE__ );
+      //include($pixproof_pdf_path.'mpdf60/mpdf.php');
+      $mpdf = new mPDF('utf-8', 'A4-L', '12', '', $dkpdf_margin_left, $dkpdf_margin_right, $dkpdf_margin_top, $dkpdf_margin_bottom, $dkpdf_margin_header );
+
+      /*
+      // make chinese characters work in the pdf
+      $mpdf->useAdobeCJK = true;
+      $mpdf->autoScriptToLang = true;
+      $mpdf->autoLangToFont = true;
+      */
+
+      // header 
+      $pdf_header_html = '';
+      $mpdf->SetHTMLHeader( $pdf_header_html );
+
+      // footer      
+      $pdf_footer_html = '';
+      $mpdf->SetHTMLFooter( $pdf_footer_html );
+
+      //$mpdf->WriteHTML( apply_filters( 'dkpdf_before_content', '' ) );  
+      $mpdf->WriteHTML($this->pixproof_pdf_get_template($pixproof_pdf_path.'templates/pdf-index.php',$attachments,$pixproof_pdf_logo)  ); 
+      //$mpdf->WriteHTML( apply_filters( 'dkpdf_after_content', '' ) );     
+
+      // action to do (open or download)  
+      //$pdfbutton_action = sanitize_option( 'dkpdf_pdfbutton_action', get_option( 'dkpdf_pdfbutton_action', 'open' ) );
+      $pdfbutton_action = 'open';
+
+      if( $pdfbutton_action == 'open') {
+
+        $mpdf->Output();
+
+      } else {
+
+        global $post;
+        $mpdf->Output( get_the_title( $post->ID ).'.pdf', 'D' );
+
+      }
+
+      exit;
+
+
+    }
+    
+    /**
+     * Gets the PDF template from the template folder
+     * @param  string $template_file    FULL Path including the .php file 
+     * @param  object [$attachments=''] The attachment data 
+     * @param  string [$logo='']        [OPTIONAL] The full path to the logo which will be used as the first page (leave blank to remove)
+     * @return string Outputed HTML for PDF Conversion
+     */
+    private function pixproof_pdf_get_template( $template_file, $attachments='', $logo='' ) {
+
+    ob_start();
+    require($template_file);
+    return ob_get_clean();   
+
+    }
 }
 
 
