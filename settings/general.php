@@ -27,17 +27,19 @@ return array(
 			'options' => array(
 				'zip_archive_generation' => array(
 					'name'    => 'zip_archive_generation',
-					'label'   => esc_html__( 'The ZIP archive should be generated:', 'pixproof' ),
-					'desc'    => esc_html__( 'How the archive file should be generated?', 'pixproof' ),
+					'label'   => esc_html__( 'The download should be generated:', 'pixproof' ),
+					'desc'    => esc_html__( 'How the file should be generated?', 'pixproof' ),
 					'default' => 'manual',
 					'type'    => 'select',
 					'options' => array(
 						'manual'    => esc_html__( 'Manually (uploaded by the gallery owner)', 'pixproof' ),
-						'automatic' => esc_html__( 'Automatically (from the selected images)', 'pixproof' ),
+						'automatic' => esc_html__( 'Automatically create .zip (from the selected images)', 'pixproof' ),
+                        'pdf' => esc_html__( 'Create a .PDF (from the selected images)', 'pixproof' ),
 					),
 				),
 			)
 		),
+    
 
 
 		'disable_pixproof_style'   => array(
